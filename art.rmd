@@ -1,0 +1,221 @@
+---
+title: "resampling to understand gender in art history textbooks"
+output: github_document
+---
+
+### setup
+
+```{r message = F, warning = F}
+library(tidyverse)
+library(tidymodels)
+library(tvthemes)
+library(arthistory)
+
+theme_custom = theme_avatar() +
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.grid.major = element_line(linewidth = 0.5, colour = "#D6D0C4"),
+        panel.grid.minor = element_line(linewidth = 0.5, colour = "#D6D0C4"))
+
+theme_set(theme_custom)
+```
+
+___
+
+### data import
+
+```{r}
+data(worksgardner)
+glimpse(worksgardner)
+```
+
+___
+
+### visualizing counts of gender in the data
+
+```{r}
+worksgardner |>
+  filter(artist_gender != "N/A") |>
+  count(artist_gender) |>
+  ggplot(aes(artist_gender, n)) +
+  geom_col(aes(fill = artist_gender), show.legend = F) +
+  geom_text(aes(label = n), vjust = -0.5, size = 3.5) +
+  scale_fill_manual(values = c("#D8B8E1", "#9FB3CE")) +
+  labs(x = "gender", y = "count", title = "counts of artist gender",
+       subtitle = paste0(nrow(filter(worksgardner, artist_gender == "N/A")), " NA values omitted")) +
+  theme(plot.subtitle = element_text(hjust = 0.5, vjust = 2.5, size = 9, face = "italic"))
+```
+
+___
+
+### visualizing artist gender over time
+
+```{r}
+worksgardner |>
+  count(publication_year, artist_gender) |>
+  group_by(publication_year) |>
+  mutate(prop = n / sum(n)) |>
+  ggplot(aes(publication_year, prop)) +
+  geom_col(aes(fill = artist_gender), alpha = 0.75) +
+  labs(x = "publication year", y = "count", fill = "artist gender",
+       title = "proportion of artist gender by publication year") +
+  scale_y_continuous(labels = scales::percent) +
+  theme(legend.position = "right")
+```
+
+___
+
+### visualizing area of work over time by gender
+
+```{r message = F, warning = F}
+worksgardner |>
+  mutate(publication_year = (publication_year %/% 10) * 10,
+         publication_year = factor(publication_year)) |>
+  ggplot(aes(publication_year, area_of_work_in_book)) +
+  geom_boxplot(aes(fill = artist_gender), alpha = 0.75, show.legend = F) +
+  facet_wrap(vars(artist_gender), ncol = 1) +
+  scale_y_log10() +
+  labs(x = "publication year", y = "area of work in book",
+       title = "area of work in book over time by gender")
+```
+
+___
+
+### histograms of area of work by gender
+
+```{r message = F, warning = F}
+worksgardner |>
+  ggplot(aes(area_of_work_in_book)) +
+  geom_histogram(aes(fill = artist_gender), bins = 30, position = "identity", alpha = 0.75) +
+  facet_wrap(vars(artist_gender), scales = "free_y", ncol = 1) +
+  scale_x_log10() +
+  labs(x = "area of work in book", y = "frequency",
+       title = "histograms of area of work in book by gender")
+```
+
+___
+
+### preparing data for modeling
+
+```{r}
+works_subset = worksgardner |>
+  filter(artist_gender %in% c("Female", "Male") & area_of_work_in_book > 0) |>
+  mutate(area_of_work_in_book = log10(area_of_work_in_book))
+
+works_subset |>
+  ggplot(aes(area_of_work_in_book)) +
+  geom_density(fill = "#8FB094", alpha = 0.75, col = "transparent") +
+  labs(x = "area of work in book (log)", y = "density",
+       title = "distribution of logarithmized area of work in book")
+```
+
+___
+
+### fitting a single linear model
+
+```{r}
+single_model = lm(area_of_work_in_book ~ artist_gender + publication_year, data = works_subset)
+summary(single_model)
+```
+
+___
+
+### creating bootstrap folds
+
+```{r}
+set.seed(123)
+folds = bootstraps(works_subset, times = 250)
+folds
+```
+
+___
+
+### building models
+
+```{r}
+linear_coefs = folds |>
+  mutate(model = map(splits, ~ lm(area_of_work_in_book ~ artist_gender + publication_year,
+                                  data = analysis(.x))),
+         coef_info = map(model, tidy))
+
+linear_coefs
+```
+
+___
+
+### getting linear coefficients
+
+```{r}
+linear_coefs |>
+  unnest(coef_info)
+```
+
+___
+
+### visualizing model results
+
+```{r}
+linear_coefs |>
+  mutate(augmented = map(model, augment)) |>
+  unnest(augmented) |>
+  ggplot(aes(publication_year, .fitted)) +
+  geom_line(aes(col = artist_gender, group = id), alpha = 0.1, show.legend = F) +
+  facet_wrap(vars(artist_gender)) +
+  labs(x = "publication year", y = "fitted model",
+       title = "modeling results by gender",
+       subtitle = "note that we have more variation for women than for men") +
+  theme(plot.subtitle = element_text(size = 9, vjust = 2.5, face = "italic", hjust = 0.5))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
